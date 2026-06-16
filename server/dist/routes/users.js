@@ -65,4 +65,64 @@ router.delete("/:id/follow", authMiddleware, (req, res) => {
     db.prepare("DELETE FROM follows WHERE follower_id = ? AND following_id = ?").run(req.userId, req.params.id);
     res.json({ message: "Unfollowed" });
 });
+// --- Favorite books ---
+router.get("/:id/favorites", (req, res) => {
+    const favorites = db.prepare(`
+    SELECT fb.position, b.*,
+      COALESCE(AVG(r.rating), 0) as avg_rating,
+      COUNT(DISTINCT r.id) as review_count,
+      (SELECT COUNT(*) FROM read_books WHERE book_id = b.id) as read_count
+    FROM favorite_books fb
+    JOIN books b ON b.id = fb.book_id
+    LEFT JOIN reviews r ON r.book_id = b.id
+    WHERE fb.user_id = ?
+    GROUP BY b.id
+    ORDER BY fb.position ASC
+  `).all(req.params.id);
+    res.json(favorites);
+});
+router.put("/favorites", authMiddleware, (req, res) => {
+    const { favorites } = req.body;
+    if (!Array.isArray(favorites) || favorites.some((f) => f.position < 1 || f.position > 4)) {
+        res.status(400).json({ error: "favorites must be an array with positions 1–4" });
+        return;
+    }
+    const replace = db.transaction(() => {
+        db.prepare("DELETE FROM favorite_books WHERE user_id = ?").run(req.userId);
+        for (const { position, book_id } of favorites) {
+            const exists = db.prepare("SELECT id FROM books WHERE id = ?").get(book_id);
+            if (exists) {
+                db.prepare("INSERT OR REPLACE INTO favorite_books (user_id, book_id, position) VALUES (?, ?, ?)").run(req.userId, book_id, position);
+            }
+        }
+    });
+    replace();
+    res.json({ message: "Favorites updated" });
+});
+// --- User's lists ---
+router.get("/:id/lists", (req, res) => {
+    let viewerId;
+    if (req.headers.authorization) {
+        try {
+            const jwt = require("jsonwebtoken");
+            const JWT_SECRET = process.env.JWT_SECRET || "book-review-secret-key";
+            const token = req.headers.authorization.slice(7);
+            const payload = jwt.verify(token, JWT_SECRET);
+            viewerId = payload.userId;
+        }
+        catch { }
+    }
+    const isOwn = viewerId && viewerId === Number(req.params.id);
+    const lists = db.prepare(`
+    SELECT l.*, u.username,
+      (SELECT COUNT(*) FROM list_items WHERE list_id = l.id) as item_count,
+      (SELECT b.cover_url FROM list_items li JOIN books b ON b.id = li.book_id WHERE li.list_id = l.id ORDER BY li.position LIMIT 1) as cover_url,
+      (SELECT COUNT(*) FROM list_likes WHERE list_id = l.id) as like_count
+    FROM lists l
+    JOIN users u ON u.id = l.user_id
+    WHERE l.user_id = ? ${isOwn ? "" : "AND l.is_private = 0"}
+    ORDER BY l.updated_at DESC
+  `).all(req.params.id);
+    res.json(lists);
+});
 export default router;

@@ -1,0 +1,12 @@
+{
+  "name": "book-review",
+  "version": "1.0.0",
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "npm ci --prefix client && npm run build --prefix client && npm ci --prefix server && npm run build --prefix server",
+    "start": "node server/dist/index.js"
+  }
+}

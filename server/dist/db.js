@@ -21,7 +21,7 @@ db.exec(`
     book_id INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
     user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
     user_name TEXT NOT NULL,
-    rating INTEGER NOT NULL CHECK(rating >= 1 AND rating <= 5),
+    rating REAL NOT NULL CHECK(rating >= 0.5 AND rating <= 5),
     content TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
@@ -156,6 +156,16 @@ const booksCols = db.pragma("table_info(books)");
 if (!booksCols.find((c) => c.name === "genre")) {
     db.exec("ALTER TABLE books ADD COLUMN genre TEXT NOT NULL DEFAULT ''");
 }
+if (!booksCols.find((c) => c.name === "country")) {
+    db.exec("ALTER TABLE books ADD COLUMN country TEXT NOT NULL DEFAULT ''");
+}
+// Track enrichment version so we can reset and re-run when logic improves
+db.exec("CREATE TABLE IF NOT EXISTS _enrichment_state (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '')");
+const enrichV = db.prepare("SELECT value FROM _enrichment_state WHERE key = 'country_version'").get();
+if (enrichV?.value !== 'v3') {
+    db.exec("UPDATE books SET country = '', genre = ''");
+    db.prepare("INSERT OR REPLACE INTO _enrichment_state (key, value) VALUES ('country_version', 'v3')").run();
+}
 const readingLogCols = db.pragma("table_info(reading_log)");
 if (!readingLogCols.find((c) => c.name === "start_date")) {
     // Recreate reading_log with new schema, migrating old data
@@ -176,6 +186,46 @@ if (!readingLogCols.find((c) => c.name === "start_date")) {
 }
 // Drop reading_journal table if it exists (safe to run every time)
 db.exec("DROP TABLE IF EXISTS reading_journal");
+// Add bio and avatar_url to users if missing
+const userProfileCols = db.pragma("table_info(users)");
+if (!userProfileCols.find((c) => c.name === "bio")) {
+    db.exec("ALTER TABLE users ADD COLUMN bio TEXT NOT NULL DEFAULT ''");
+}
+if (!userProfileCols.find((c) => c.name === "avatar_url")) {
+    db.exec("ALTER TABLE users ADD COLUMN avatar_url TEXT NOT NULL DEFAULT ''");
+}
+// Migrate rating column from INTEGER to REAL to support half-star ratings (0.5 increments)
+const ratingColType = db.pragma("table_info(reviews)")
+    .find((c) => c.name === "rating")?.type;
+if (ratingColType === "INTEGER") {
+    db.pragma("foreign_keys = OFF");
+    db.exec(`
+    ALTER TABLE reviews RENAME TO reviews_integer_backup;
+    CREATE TABLE reviews (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      book_id INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+      user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      user_name TEXT NOT NULL,
+      rating REAL NOT NULL CHECK(rating >= 0.5 AND rating <= 5),
+      content TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    INSERT INTO reviews SELECT * FROM reviews_integer_backup;
+    DROP TABLE reviews_integer_backup;
+  `);
+    db.pragma("foreign_keys = ON");
+}
+// Add favorite_books table if missing
+db.exec(`
+  CREATE TABLE IF NOT EXISTS favorite_books (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    book_id INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+    position INTEGER NOT NULL CHECK(position >= 1 AND position <= 4),
+    UNIQUE(user_id, position),
+    UNIQUE(user_id, book_id)
+  )
+`);
 // Seed default discussion categories if empty
 const existingCategories = db.prepare("SELECT COUNT(*) as count FROM discussion_categories").get();
 if (existingCategories.count === 0) {

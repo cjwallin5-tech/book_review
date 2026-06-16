@@ -1,5 +1,7 @@
 import express from "express";
 import cors from "cors";
+import path from "path";
+import { fileURLToPath } from "url";
 import booksRouter, { scheduleEnrichment } from "./routes/books.js";
 import coversRouter, { prewarmCovers } from "./routes/covers.js";
 import authRouter from "./routes/auth.js";
@@ -9,6 +11,9 @@ import usersRouter from "./routes/users.js";
 import statsRouter from "./routes/stats.js";
 import discussionsRouter from "./routes/discussions.js";
 import searchRouter from "./routes/search.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -26,9 +31,15 @@ app.use("/api/stats", statsRouter);
 app.use("/api/discussions", discussionsRouter);
 app.use("/api/search", searchRouter);
 
+// Serve React frontend (production build)
+const clientDist = path.join(__dirname, "../../client/dist");
+app.use(express.static(clientDist));
+app.get("*", (_req, res) => {
+  res.sendFile(path.join(clientDist, "index.html"));
+});
+
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
-  // Backfill country/genre for any books missing that data
   setTimeout(() => scheduleEnrichment().catch(console.error), 2000);
   setTimeout(() => prewarmCovers().catch(console.error), 5000);
 });

@@ -11,7 +11,7 @@ fs.mkdirSync(COVERS_DIR, { recursive: true });
 const router = Router();
 
 router.get("/:coverId", async (req: Request, res: Response) => {
-  const { coverId } = req.params;
+  const coverId = req.params.coverId as string;
   if (!/^\d+$/.test(coverId)) { res.sendStatus(400); return; }
 
   const coverPath = path.join(COVERS_DIR, `${coverId}.jpg`);
