@@ -4,25 +4,13 @@ import type { Book } from "../api";
 import { getBooks, getReadBooks, getCurrentlyReadingBooks, getFriendsReading } from "../api";
 import { useAuth } from "../context/AuthContext";
 
-const ROW_PREVIEW = 6;
-
-function BookSkeletonGrid({ count }: { count: number }) {
-  return (
-    <div className="grid gap-2 grid-cols-3 sm:grid-cols-5 lg:grid-cols-7">
-      {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="rounded-md overflow-hidden shadow-book ring-1 ring-white/5">
-          <div className="w-full aspect-[2/3] skeleton-shimmer" />
-        </div>
-      ))}
-    </div>
-  );
-}
+const ROW_SIZE = 14;
 
 function BookCard({ book, index, isRead }: { book: Book; index: number; isRead: boolean }) {
   return (
     <Link
       to={`/books/${book.id}`}
-      className="group relative animate-fade-in-up"
+      className="group relative shrink-0 w-24 sm:w-28 animate-fade-in-up"
       style={{ animationDelay: `${Math.min(index * 28, 360)}ms` }}
     >
       <div className="relative rounded-md overflow-hidden ring-1 ring-white/5 shadow-book transition-all duration-300 group-hover:shadow-book-hover group-hover:-translate-y-1 group-hover:rotate-[0.5deg]">
@@ -40,23 +28,21 @@ function BookCard({ book, index, isRead }: { book: Book; index: number; isRead: 
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex flex-col justify-end p-2">
           <p className="text-white text-xs font-medium leading-tight line-clamp-2">{book.title}</p>
           <p className="text-gray-300 text-[10px] mt-0.5 truncate">{book.author}</p>
-          <div className="flex items-center gap-2 mt-1 flex-wrap">
-            {book.review_count > 0 && (
-              <div className="flex items-center gap-0.5">
-                <span className="text-blue-400 text-[10px]">★</span>
-                <span className="text-white text-[10px] font-medium">
-                  {Number(book.avg_rating).toFixed(1)}
-                </span>
-              </div>
-            )}
-            {book.read_count > 0 && (
-              <span className="text-gray-400 text-[10px]">
-                {book.read_count.toLocaleString()} read
+          {book.review_count > 0 && (
+            <div className="flex items-center gap-0.5 mt-1">
+              <span className="text-blue-400 text-[10px]">★</span>
+              <span className="text-white text-[10px] font-medium">
+                {Number(book.avg_rating).toFixed(1)}
               </span>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       </div>
+      {book.read_count > 0 && (
+        <p className="mt-1 text-[10px] text-gray-500 leading-tight truncate">
+          {book.read_count.toLocaleString()} read
+        </p>
+      )}
     </Link>
   );
 }
@@ -66,47 +52,63 @@ function BookRow({
   books,
   readIds,
   loading,
+  browsePath,
 }: {
   title: string;
   books: Book[];
   readIds: number[];
   loading: boolean;
+  browsePath?: string;
 }) {
-  const [expanded, setExpanded] = useState(false);
-  const canExpand = books.length > ROW_PREVIEW;
-  const visible = expanded ? books : books.slice(0, ROW_PREVIEW);
+  const visible = books.slice(0, ROW_SIZE);
 
   return (
     <div className="mb-10">
-      <button
-        onClick={() => canExpand && setExpanded((v) => !v)}
-        className={`flex items-center gap-3 w-full mb-4 text-left ${canExpand ? "group cursor-pointer" : "cursor-default"}`}
-      >
-        <span className={`text-sm font-semibold text-white transition-colors ${canExpand ? "group-hover:text-blue-400" : ""}`}>
-          {title}
-        </span>
-        {!loading && canExpand && (
-          <span className="text-[10px] font-medium text-gray-500 group-hover:text-blue-400 transition-colors">
-            {expanded ? "— show less" : `— see all ${books.length}`}
-          </span>
+      <div className="flex items-center gap-3 mb-4">
+        {browsePath ? (
+          <Link
+            to={browsePath}
+            className="text-sm font-semibold text-white hover:text-blue-400 transition-colors"
+          >
+            {title}
+          </Link>
+        ) : (
+          <span className="text-sm font-semibold text-white">{title}</span>
         )}
         <div className="flex-1 h-px bg-gray-700/60" />
-        {!loading && canExpand && (
-          <svg
-            width="12" height="12" viewBox="0 0 12 12" fill="none"
-            className={`shrink-0 text-gray-500 group-hover:text-blue-400 transition-all duration-200 ${expanded ? "rotate-180" : ""}`}
+        {!loading && browsePath && (
+          <Link
+            to={browsePath}
+            className="text-[10px] font-medium text-gray-500 hover:text-blue-400 transition-colors whitespace-nowrap"
           >
-            <path d="M2 4.5L6 8.5L10 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
+            See all →
+          </Link>
         )}
-      </button>
+      </div>
       {loading ? (
-        <BookSkeletonGrid count={ROW_PREVIEW} />
+        <div className="flex gap-2 overflow-hidden">
+          {Array.from({ length: 7 }).map((_, i) => (
+            <div key={i} className="shrink-0 w-24 sm:w-28 rounded-md overflow-hidden shadow-book ring-1 ring-white/5">
+              <div className="w-full aspect-[2/3] skeleton-shimmer" />
+            </div>
+          ))}
+        </div>
       ) : (
-        <div className="grid gap-2 grid-cols-3 sm:grid-cols-5 lg:grid-cols-7">
+        <div className="flex gap-2 overflow-x-auto pb-2 -mx-4 px-4">
           {visible.map((book, index) => (
             <BookCard key={book.id} book={book} index={index} isRead={readIds.includes(book.id)} />
           ))}
+          {browsePath && books.length > ROW_SIZE && (
+            <Link
+              to={browsePath}
+              className="shrink-0 w-24 sm:w-28 flex items-center justify-center rounded-md ring-1 ring-white/10 bg-gray-800/60 hover:bg-gray-700/60 transition-colors aspect-[2/3]"
+            >
+              <div className="text-center px-2">
+                <p className="text-gray-300 text-xs font-medium">See all</p>
+                <p className="text-gray-500 text-[10px] mt-0.5">{books.length} books</p>
+              </div>
+            </Link>
+          )}
         </div>
       )}
     </div>
@@ -411,6 +413,7 @@ export default function Home() {
             books={trendingBooks}
             readIds={readIds}
             loading={loading}
+            browsePath="/browse/trending"
           />
 
           {user && friendsBooks.length > 0 && (
@@ -427,6 +430,7 @@ export default function Home() {
             books={topRatedBooks}
             readIds={readIds}
             loading={loading}
+            browsePath="/browse/rating"
           />
         </>
       )}

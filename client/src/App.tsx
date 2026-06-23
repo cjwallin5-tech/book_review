@@ -23,6 +23,7 @@ import ThreadList from "./pages/ThreadList";
 import ThreadDetail from "./pages/ThreadDetail";
 import NewThread from "./pages/NewThread";
 import SearchPage from "./pages/Search";
+import BrowsePage from "./pages/BrowsePage";
 
 export default function App() {
   const { user, loading, logout } = useAuth();
@@ -219,6 +220,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/search" element={<SearchPage />} />
+          <Route path="/browse/:sort" element={<BrowsePage />} />
           <Route path="/books/:id" element={<BookDetail />} />
           <Route path="/to-read" element={<ToRead />} />
           <Route path="/diary" element={<Diary />} />
