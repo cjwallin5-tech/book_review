@@ -395,6 +395,7 @@ router.get("/", (req, res) => {
       GROUP BY b.id
       HAVING review_count > 0
       ORDER BY avg_rating DESC, review_count DESC
+      LIMIT 100
     `;
         params = [];
     }
@@ -412,7 +413,7 @@ router.get("/", (req, res) => {
         (SELECT COUNT(*) FROM reading_log WHERE book_id = b.id AND created_at > datetime('now', '-30 days')) +
         (SELECT COUNT(*) FROM read_books WHERE book_id = b.id AND created_at > datetime('now', '-30 days')) * 2
       ) DESC, read_count DESC
-      LIMIT 14
+      LIMIT 100
     `;
         params = [];
     }
@@ -580,6 +581,23 @@ router.post("/:id/tbr", authMiddleware, (req, res) => {
 router.delete("/:id/tbr", authMiddleware, (req, res) => {
     db.prepare("DELETE FROM tbr_books WHERE user_id = ? AND book_id = ?").run(req.userId, req.params.id);
     res.json({ message: "Removed from TBR" });
+});
+router.get("/friends/reading", authMiddleware, (req, res) => {
+    const books = db.prepare(`
+    SELECT b.*,
+      COALESCE(AVG(r.rating), 0) as avg_rating,
+      COUNT(DISTINCT r.id) as review_count,
+      (SELECT COUNT(*) FROM read_books WHERE book_id = b.id) as read_count,
+      MAX(rb.created_at) as last_activity
+    FROM read_books rb
+    JOIN follows f ON f.following_id = rb.user_id AND f.follower_id = ?
+    JOIN books b ON b.id = rb.book_id
+    LEFT JOIN reviews r ON r.book_id = b.id
+    GROUP BY b.id
+    ORDER BY last_activity DESC
+    LIMIT 50
+  `).all(req.userId);
+    res.json(books);
 });
 router.get("/read/list", authMiddleware, (req, res) => {
     const books = db.prepare(`

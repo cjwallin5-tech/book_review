@@ -424,7 +424,7 @@ router.get("/", (req: Request, res: Response) => {
         (SELECT COUNT(*) FROM reading_log WHERE book_id = b.id AND created_at > datetime('now', '-30 days')) +
         (SELECT COUNT(*) FROM read_books WHERE book_id = b.id AND created_at > datetime('now', '-30 days')) * 2
       ) DESC, read_count DESC
-      LIMIT 14
+      LIMIT 100
     `;
     params = [];
   } else {

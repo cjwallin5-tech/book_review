@@ -92,7 +92,7 @@ export default function ThreadList() {
       <div className="mt-6 space-y-1.5">
         {threads.length === 0 ? (
           <div className="py-20 text-center">
-            <div className="text-4xl mb-3">💬</div>
+            <div className="mb-3 flex justify-center"><MessageSquare size={36} className="text-gray-600" /></div>
             <p className="text-base font-medium text-gray-300 mb-1">No threads yet</p>
             {user ? (
               <>

@@ -1,6 +1,23 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
-import { Heart, MessageCircle, BookOpen } from "lucide-react";
+import { Heart, MessageCircle, BookOpen, Check } from "lucide-react";
+
+const FICTION_GENRES = new Set([
+  "Fiction", "Science Fiction", "Fantasy", "Romance", "Mystery", "Thriller",
+  "Historical Fiction", "Adventure", "Crime", "Young Adult", "Children", "Drama", "Horror",
+]);
+const NONFICTION_GENRES = new Set([
+  "Non-Fiction", "History", "Biography", "Memoir", "Self-Help",
+  "Philosophy", "Psychology", "Poetry", "Graphic Novel",
+]);
+
+function computeGenres(genre: string): string[] {
+  if (!genre) return [];
+  const result = new Set([genre]);
+  if (FICTION_GENRES.has(genre) && genre !== "Fiction") result.add("Fiction");
+  if (NONFICTION_GENRES.has(genre) && genre !== "Non-Fiction") result.add("Non-Fiction");
+  return [...result];
+}
 import type { BookDetail as BookDetailType, ReviewComment, SeriesBook, Book } from "../api";
 import {
   getBook,
@@ -488,9 +505,20 @@ export default function BookDetail() {
             </Link>
           </p>
           {book.genre && (
-            <span className="inline-block mt-2 text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-0.5 rounded-full">
-              {book.genre}
-            </span>
+            <div className="flex flex-wrap gap-1.5 mt-2">
+              {computeGenres(book.genre).map((g) => (
+                <span
+                  key={g}
+                  className={`text-xs px-2.5 py-0.5 rounded-full ${
+                    g === "Fiction" || g === "Non-Fiction"
+                      ? "ring-1 ring-blue-400/40 text-blue-300 bg-blue-500/10"
+                      : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300"
+                  }`}
+                >
+                  {g}
+                </span>
+              ))}
+            </div>
           )}
 
           <div className="mt-4">
@@ -525,7 +553,7 @@ export default function BookDetail() {
                     : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600"
                 }`}
               >
-                {read ? "✓ Read" : "Mark as Read"}
+                {read ? <span className="flex items-center gap-1.5"><Check size={13} />Read</span> : "Mark as Read"}
               </button>
               <button
                 onClick={handleToggleCurrentlyReading}

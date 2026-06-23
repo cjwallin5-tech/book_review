@@ -1,10 +1,20 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { Check } from "lucide-react";
 import type { Book } from "../api";
 import { getBooks, getReadBooks, getCurrentlyReadingBooks, getFriendsReading } from "../api";
 import { useAuth } from "../context/AuthContext";
 
 const ROW_SIZE = 14;
+
+const FICTION_GENRES = new Set([
+  "Fiction", "Science Fiction", "Fantasy", "Romance", "Mystery", "Thriller",
+  "Historical Fiction", "Adventure", "Crime", "Young Adult", "Children", "Drama", "Horror",
+]);
+const NONFICTION_GENRES = new Set([
+  "Non-Fiction", "History", "Biography", "Memoir", "Self-Help",
+  "Philosophy", "Psychology", "Poetry", "Graphic Novel",
+]);
 
 function BookCard({ book, index, isRead }: { book: Book; index: number; isRead: boolean }) {
   return (
@@ -21,8 +31,8 @@ function BookCard({ book, index, isRead }: { book: Book; index: number; isRead: 
           loading="lazy"
         />
         {isRead && (
-          <span className="absolute top-1.5 right-1.5 bg-blue-500 text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center">
-            ✓
+          <span className="absolute top-1.5 right-1.5 bg-blue-500 text-white w-5 h-5 rounded-full flex items-center justify-center">
+            <Check size={10} strokeWidth={3} />
           </span>
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex flex-col justify-end p-2">
@@ -115,37 +125,99 @@ function BookRow({
   );
 }
 
-function FilterRow({
+const META_GENRE_DESCRIPTIONS: Record<string, string> = {
+  Fiction: "Fantasy, Sci-Fi, Mystery, Romance, Thriller + more",
+  "Non-Fiction": "History, Biography, Memoir, Self-Help + more",
+};
+
+function FilterSection({
   label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-2">
+      <p className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">{label}</p>
+      {children}
+    </div>
+  );
+}
+
+function GenreFilterRow({
   items,
   selected,
   onSelect,
 }: {
-  label: string;
   items: string[];
   selected: string;
   onSelect: (v: string) => void;
 }) {
   return (
-    <div className="flex items-center gap-2 min-w-0">
-      <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-500 w-16 shrink-0">
-        {label}
-      </span>
-      <div className="flex gap-1.5 overflow-x-auto pb-0.5 min-w-0">
-        {items.map((item) => (
-          <button
-            key={item}
-            onClick={() => onSelect(item)}
-            className={`shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-              selected === item
-                ? "bg-blue-500 text-white"
-                : "bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-200"
-            }`}
-          >
-            {item}
-          </button>
-        ))}
+    <div className="space-y-1.5">
+      <div className="flex gap-1.5 flex-wrap">
+        {items.map((item) => {
+          const isMeta = item === "Fiction" || item === "Non-Fiction";
+          const isActive = selected === item;
+          return (
+            <div key={item} className="relative group">
+              <button
+                onClick={() => onSelect(item)}
+                className={`shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                  isActive
+                    ? "bg-blue-500 text-white"
+                    : isMeta
+                    ? "ring-1 ring-blue-400/40 text-blue-300 bg-blue-500/10 hover:bg-blue-500/20"
+                    : "bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-200"
+                }`}
+              >
+                {item}
+              </button>
+              {isMeta && !isActive && META_GENRE_DESCRIPTIONS[item] && (
+                <div className="absolute bottom-full left-0 mb-1.5 hidden group-hover:block z-10 pointer-events-none">
+                  <div className="bg-gray-900 border border-gray-700 text-gray-300 text-[10px] px-2 py-1 rounded whitespace-nowrap shadow-lg">
+                    {META_GENRE_DESCRIPTIONS[item]}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
+      {(selected === "Fiction" || selected === "Non-Fiction") && (
+        <p className="text-[11px] text-blue-400/80 italic">
+          Showing all {selected.toLowerCase()} sub-genres
+        </p>
+      )}
+    </div>
+  );
+}
+
+function PillFilterRow({
+  items,
+  selected,
+  onSelect,
+}: {
+  items: string[];
+  selected: string;
+  onSelect: (v: string) => void;
+}) {
+  return (
+    <div className="flex gap-1.5 overflow-x-auto pb-0.5">
+      {items.map((item) => (
+        <button
+          key={item}
+          onClick={() => onSelect(item)}
+          className={`shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+            selected === item
+              ? "bg-blue-500 text-white"
+              : "bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-200"
+          }`}
+        >
+          {item}
+        </button>
+      ))}
     </div>
   );
 }
@@ -183,7 +255,15 @@ export default function Home() {
     Promise.all(promises).finally(() => setLoading(false));
   }, [user]);
 
-  const genres = ["All", ...Array.from(new Set(allBooks.map((b) => b.genre).filter(Boolean))).sort()];
+  const specificGenres = Array.from(new Set(allBooks.map((b) => b.genre).filter(Boolean))).sort();
+  const hasFiction = specificGenres.some((g) => FICTION_GENRES.has(g));
+  const hasNonFiction = specificGenres.some((g) => NONFICTION_GENRES.has(g));
+  const genres = [
+    "All",
+    ...(hasFiction ? ["Fiction"] : []),
+    ...(hasNonFiction ? ["Non-Fiction"] : []),
+    ...specificGenres.filter((g) => g !== "Fiction" && g !== "Non-Fiction"),
+  ];
   const countries = ["All", ...Array.from(new Set(allBooks.map((b) => b.country).filter(Boolean))).sort()];
 
   const filtersActive = selectedGenre !== "All" || selectedCountry !== "All" || minRating > 0;
@@ -193,7 +273,12 @@ export default function Home() {
     (minRating > 0 ? 1 : 0);
 
   const filteredBooks = allBooks.filter((book) => {
-    if (selectedGenre !== "All" && book.genre !== selectedGenre) return false;
+    if (selectedGenre !== "All") {
+      const g = book.genre || "";
+      if (selectedGenre === "Fiction" && !FICTION_GENRES.has(g)) return false;
+      else if (selectedGenre === "Non-Fiction" && !NONFICTION_GENRES.has(g)) return false;
+      else if (selectedGenre !== "Fiction" && selectedGenre !== "Non-Fiction" && g !== selectedGenre) return false;
+    }
     if (selectedCountry !== "All" && book.country !== selectedCountry) return false;
     if (minRating > 0 && book.avg_rating < minRating) return false;
     return true;
@@ -335,43 +420,32 @@ export default function Home() {
           </div>
 
           {showFilters && (
-            <div className="mt-3 p-4 bg-gray-900/60 border border-gray-800/60 rounded-xl space-y-3 animate-fade-in">
+            <div className="mt-3 p-5 bg-gray-900/70 border border-gray-700/50 rounded-xl space-y-5 animate-fade-in shadow-lg">
               {genres.length > 2 && (
-                <FilterRow
-                  label="Genre"
-                  items={genres}
-                  selected={selectedGenre}
-                  onSelect={setSelectedGenre}
-                />
+                <FilterSection label="Genre">
+                  <GenreFilterRow
+                    items={genres}
+                    selected={selectedGenre}
+                    onSelect={setSelectedGenre}
+                  />
+                </FilterSection>
               )}
               {countries.length > 2 && (
-                <FilterRow
-                  label="Country"
-                  items={countries}
-                  selected={selectedCountry}
-                  onSelect={setSelectedCountry}
-                />
+                <FilterSection label="Country">
+                  <PillFilterRow
+                    items={countries}
+                    selected={selectedCountry}
+                    onSelect={setSelectedCountry}
+                  />
+                </FilterSection>
               )}
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-500 w-16 shrink-0">
-                  Rating
-                </span>
-                <div className="flex gap-1.5">
-                  {RATINGS.map((r) => (
-                    <button
-                      key={r.value}
-                      onClick={() => setMinRating(r.value)}
-                      className={`shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                        minRating === r.value
-                          ? "bg-blue-500 text-white"
-                          : "bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-200"
-                      }`}
-                    >
-                      {r.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
+              <FilterSection label="Min Rating">
+                <PillFilterRow
+                  items={RATINGS.map((r) => r.label)}
+                  selected={RATINGS.find((r) => r.value === minRating)?.label ?? "Any"}
+                  onSelect={(label) => setMinRating(RATINGS.find((r) => r.label === label)?.value ?? 0)}
+                />
+              </FilterSection>
             </div>
           )}
         </div>

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Plus, Lock } from "lucide-react";
+import { Plus, Lock, List } from "lucide-react";
 import type { BookList } from "../api";
 import { getLists } from "../api";
 
@@ -101,7 +101,7 @@ export default function Lists() {
 
         {lists.length === 0 ? (
           <div className="py-16 text-center">
-            <div className="text-4xl mb-3">📋</div>
+            <div className="mb-3 flex justify-center"><List size={36} className="text-gray-600" /></div>
             <p className="text-sm font-medium text-gray-300 mb-1">No lists yet</p>
             <p className="text-xs text-gray-500 mb-4">Create a list to share your favorites.</p>
             <Link

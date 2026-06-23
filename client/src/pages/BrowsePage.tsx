@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { Check } from "lucide-react";
 import type { Book } from "../api";
 import { getBooks, getReadBooks } from "../api";
 import { useAuth } from "../context/AuthContext";
@@ -20,8 +21,8 @@ function BookCard({ book, isRead }: { book: Book; isRead: boolean }) {
           loading="lazy"
         />
         {isRead && (
-          <span className="absolute top-1.5 right-1.5 bg-blue-500 text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center">
-            ✓
+          <span className="absolute top-1.5 right-1.5 bg-blue-500 text-white w-5 h-5 rounded-full flex items-center justify-center">
+            <Check size={10} strokeWidth={3} />
           </span>
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex flex-col justify-end p-2">
