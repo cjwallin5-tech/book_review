@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import type { Book } from "../api";
-import { getBooks, getReadBooks, getCurrentlyReadingBooks } from "../api";
+import { getBooks, getReadBooks, getCurrentlyReadingBooks, getFriendsReading } from "../api";
 import { useAuth } from "../context/AuthContext";
+
+const ROW_PREVIEW = 6;
 
 function BookSkeletonGrid({ count }: { count: number }) {
   return (
@@ -38,17 +40,76 @@ function BookCard({ book, index, isRead }: { book: Book; index: number; isRead: 
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex flex-col justify-end p-2">
           <p className="text-white text-xs font-medium leading-tight line-clamp-2">{book.title}</p>
           <p className="text-gray-300 text-[10px] mt-0.5 truncate">{book.author}</p>
-          {book.review_count > 0 && (
-            <div className="flex items-center gap-1 mt-1">
-              <span className="text-blue-400 text-[10px]">★</span>
-              <span className="text-white text-[10px] font-medium">
-                {Number(book.avg_rating).toFixed(1)}
+          <div className="flex items-center gap-2 mt-1 flex-wrap">
+            {book.review_count > 0 && (
+              <div className="flex items-center gap-0.5">
+                <span className="text-blue-400 text-[10px]">★</span>
+                <span className="text-white text-[10px] font-medium">
+                  {Number(book.avg_rating).toFixed(1)}
+                </span>
+              </div>
+            )}
+            {book.read_count > 0 && (
+              <span className="text-gray-400 text-[10px]">
+                {book.read_count.toLocaleString()} read
               </span>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
     </Link>
+  );
+}
+
+function BookRow({
+  title,
+  books,
+  readIds,
+  loading,
+}: {
+  title: string;
+  books: Book[];
+  readIds: number[];
+  loading: boolean;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const canExpand = books.length > ROW_PREVIEW;
+  const visible = expanded ? books : books.slice(0, ROW_PREVIEW);
+
+  return (
+    <div className="mb-10">
+      <button
+        onClick={() => canExpand && setExpanded((v) => !v)}
+        className={`flex items-center gap-3 w-full mb-4 text-left ${canExpand ? "group cursor-pointer" : "cursor-default"}`}
+      >
+        <span className={`text-sm font-semibold text-white transition-colors ${canExpand ? "group-hover:text-blue-400" : ""}`}>
+          {title}
+        </span>
+        {!loading && canExpand && (
+          <span className="text-[10px] font-medium text-gray-500 group-hover:text-blue-400 transition-colors">
+            {expanded ? "— show less" : `— see all ${books.length}`}
+          </span>
+        )}
+        <div className="flex-1 h-px bg-gray-700/60" />
+        {!loading && canExpand && (
+          <svg
+            width="12" height="12" viewBox="0 0 12 12" fill="none"
+            className={`shrink-0 text-gray-500 group-hover:text-blue-400 transition-all duration-200 ${expanded ? "rotate-180" : ""}`}
+          >
+            <path d="M2 4.5L6 8.5L10 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        )}
+      </button>
+      {loading ? (
+        <BookSkeletonGrid count={ROW_PREVIEW} />
+      ) : (
+        <div className="grid gap-2 grid-cols-3 sm:grid-cols-5 lg:grid-cols-7">
+          {visible.map((book, index) => (
+            <BookCard key={book.id} book={book} index={index} isRead={readIds.includes(book.id)} />
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -89,8 +150,10 @@ function FilterRow({
 
 export default function Home() {
   const { user } = useAuth();
-  const [books, setBooks] = useState<Book[]>([]);
+  const [allBooks, setAllBooks] = useState<Book[]>([]);
   const [trendingBooks, setTrendingBooks] = useState<Book[]>([]);
+  const [topRatedBooks, setTopRatedBooks] = useState<Book[]>([]);
+  const [friendsBooks, setFriendsBooks] = useState<Book[]>([]);
   const [currentlyReading, setCurrentlyReading] = useState<Book[]>([]);
   const [readIds, setReadIds] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
@@ -102,10 +165,12 @@ export default function Home() {
 
   useEffect(() => {
     const promises: Promise<void>[] = [
-      getBooks().then(setBooks).catch(console.error),
+      getBooks().then(setAllBooks).catch(console.error),
       getBooks("trending").then(setTrendingBooks).catch(console.error),
+      getBooks("rating").then(setTopRatedBooks).catch(console.error),
     ];
     if (user) {
+      promises.push(getFriendsReading().then(setFriendsBooks).catch(() => {}));
       promises.push(
         getReadBooks()
           .then((b) => setReadIds(b.map((r) => r.id)))
@@ -116,11 +181,8 @@ export default function Home() {
     Promise.all(promises).finally(() => setLoading(false));
   }, [user]);
 
-  const genres = ["All", ...Array.from(new Set(books.map((b) => b.genre).filter(Boolean))).sort()];
-  const countries = [
-    "All",
-    ...Array.from(new Set(books.map((b) => b.country).filter(Boolean))).sort(),
-  ];
+  const genres = ["All", ...Array.from(new Set(allBooks.map((b) => b.genre).filter(Boolean))).sort()];
+  const countries = ["All", ...Array.from(new Set(allBooks.map((b) => b.country).filter(Boolean))).sort()];
 
   const filtersActive = selectedGenre !== "All" || selectedCountry !== "All" || minRating > 0;
   const activeFilterCount =
@@ -128,7 +190,7 @@ export default function Home() {
     (selectedCountry !== "All" ? 1 : 0) +
     (minRating > 0 ? 1 : 0);
 
-  const displayBooks = books.filter((book) => {
+  const filteredBooks = allBooks.filter((book) => {
     if (selectedGenre !== "All" && book.genre !== selectedGenre) return false;
     if (selectedCountry !== "All" && book.country !== selectedCountry) return false;
     if (minRating > 0 && book.avg_rating < minRating) return false;
@@ -152,9 +214,9 @@ export default function Home() {
       {/* ── Hero (logged-out) ──────────────────────────────────────────────── */}
       {!user && (
         <div className="relative mb-12 rounded-2xl overflow-hidden min-h-[360px] flex items-center">
-          {books.length > 0 && (
+          {allBooks.length > 0 && (
             <div className="absolute inset-0 flex">
-              {books.slice(0, 14).map((book) => (
+              {allBooks.slice(0, 14).map((book) => (
                 <div key={book.id} className="flex-1 overflow-hidden">
                   <img
                     src={book.cover_url}
@@ -233,7 +295,7 @@ export default function Home() {
 
       {/* ── Filters ───────────────────────────────────────────────────────── */}
       {!loading && (
-        <div className="mb-5">
+        <div className="mb-6">
           <div className="flex items-center gap-3">
             <button
               onClick={() => setShowFilters((v) => !v)}
@@ -313,48 +375,60 @@ export default function Home() {
         </div>
       )}
 
-      {/* ── Popular grid ──────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold text-white">
-          {user ? "Popular Books" : "Popular among members"}
-        </h2>
-        {!loading && filtersActive && (
-          <span className="text-xs text-gray-500">{displayBooks.length} results</span>
-        )}
-      </div>
-
-      {loading ? (
-        <BookSkeletonGrid count={14} />
-      ) : displayBooks.length === 0 ? (
-        <div className="py-16 text-center">
-          <p className="text-gray-400 text-sm mb-2">No books match these filters.</p>
-          <button onClick={clearFilters} className="text-sm text-blue-400 hover:text-blue-300 transition-colors">
-            Clear filters
-          </button>
-        </div>
-      ) : (
-        <div className="grid gap-2 grid-cols-3 sm:grid-cols-5 lg:grid-cols-7">
-          {displayBooks.map((book, index) => (
-            <BookCard key={book.id} book={book} index={index} isRead={readIds.includes(book.id)} />
-          ))}
+      {/* ── Filtered results view ─────────────────────────────────────────── */}
+      {filtersActive && (
+        <div className="mb-10">
+          <div className="flex items-center gap-3 mb-4">
+            <span className="text-sm font-semibold text-white">Filtered Results</span>
+            <span className="text-xs text-gray-500">{filteredBooks.length} books</span>
+            <div className="flex-1 h-px bg-gray-700/60" />
+          </div>
+          {filteredBooks.length === 0 ? (
+            <div className="py-16 text-center">
+              <p className="text-gray-400 text-sm mb-2">No books match these filters.</p>
+              <button
+                onClick={clearFilters}
+                className="text-sm text-blue-400 hover:text-blue-300 transition-colors"
+              >
+                Clear filters
+              </button>
+            </div>
+          ) : (
+            <div className="grid gap-2 grid-cols-3 sm:grid-cols-5 lg:grid-cols-7">
+              {filteredBooks.map((book, index) => (
+                <BookCard key={book.id} book={book} index={index} isRead={readIds.includes(book.id)} />
+              ))}
+            </div>
+          )}
         </div>
       )}
 
-      {/* ── Trending ──────────────────────────────────────────────────────── */}
-      {!loading && !filtersActive && trendingBooks.length > 0 && (
-        <div className="mt-12 animate-fade-in-up" style={{ animationDelay: "200ms" }}>
-          <div className="flex items-center gap-3 mb-4">
-            <span className="text-[11px] font-semibold uppercase tracking-widest text-gray-400 whitespace-nowrap">
-              Trending
-            </span>
-            <div className="flex-1 h-px bg-gray-700/60" />
-          </div>
-          <div className="grid gap-2 grid-cols-3 sm:grid-cols-5 lg:grid-cols-7">
-            {trendingBooks.map((book, index) => (
-              <BookCard key={book.id} book={book} index={index} isRead={readIds.includes(book.id)} />
-            ))}
-          </div>
-        </div>
+      {/* ── Book rows ─────────────────────────────────────────────────────── */}
+      {!filtersActive && (
+        <>
+          <BookRow
+            title="Popular Right Now"
+            books={trendingBooks}
+            readIds={readIds}
+            loading={loading}
+          />
+
+          {user && friendsBooks.length > 0 && (
+            <BookRow
+              title="Friends Are Reading"
+              books={friendsBooks}
+              readIds={readIds}
+              loading={false}
+            />
+          )}
+
+          <BookRow
+            title="Top Rated"
+            books={topRatedBooks}
+            readIds={readIds}
+            loading={loading}
+          />
+        </>
       )}
     </div>
   );

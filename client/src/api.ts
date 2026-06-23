@@ -266,6 +266,14 @@ export async function getReadStatus(bookId: number): Promise<boolean> {
   return data.read;
 }
 
+// --- Friends Reading ---
+
+export async function getFriendsReading(): Promise<Book[]> {
+  const res = await fetch(`${API}/books/friends/reading`, { headers: authHeaders() });
+  if (!res.ok) throw new Error("Failed to fetch friends reading");
+  return (await res.json() as Book[]).map(pc);
+}
+
 // --- Currently Reading ---
 
 export async function getCurrentlyReadingBooks(): Promise<Book[]> {
