@@ -98,12 +98,13 @@ function authHeaders(): Record<string, string> {
 
 export async function register(
   username: string,
-  password: string
+  password: string,
+  email: string
 ): Promise<{ token: string; user: { id: number; username: string } }> {
   const res = await fetch(`${API}/auth/register`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username, password }),
+    body: JSON.stringify({ username, password, email }),
   });
   if (!res.ok) {
     const err = await res.json();
