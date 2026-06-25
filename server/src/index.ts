@@ -11,6 +11,7 @@ import usersRouter from "./routes/users.js";
 import statsRouter from "./routes/stats.js";
 import discussionsRouter from "./routes/discussions.js";
 import searchRouter from "./routes/search.js";
+import challengesRouter from "./routes/challenges.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -30,6 +31,7 @@ app.use("/api/users", usersRouter);
 app.use("/api/stats", statsRouter);
 app.use("/api/discussions", discussionsRouter);
 app.use("/api/search", searchRouter);
+app.use("/api/challenges", challengesRouter);
 
 // Serve React frontend (production build)
 const clientDist = path.join(__dirname, "../../client/dist");

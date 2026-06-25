@@ -445,6 +445,53 @@ router.get("/", (req: Request, res: Response) => {
   res.json(books);
 });
 
+// ── Surprise me ─────────────────────────────────────────────────────────────
+// Must be registered BEFORE /:id to avoid that pattern swallowing it.
+
+router.get("/surprise", (req: Request, res: Response) => {
+  let userId: number | undefined;
+  if (req.headers.authorization) {
+    try {
+      const jwt = require("jsonwebtoken");
+      const JWT_SECRET = process.env.JWT_SECRET || "book-review-secret-key";
+      const token = (req.headers.authorization as string).slice(7);
+      const payload = jwt.verify(token, JWT_SECRET) as { userId: number };
+      userId = payload.userId;
+    } catch {}
+  }
+
+  const book = userId
+    ? db.prepare(`
+        SELECT b.*,
+          COALESCE(AVG(r.rating), 0) as avg_rating,
+          COUNT(DISTINCT r.id) as review_count,
+          (SELECT COUNT(*) FROM read_books WHERE book_id = b.id) as read_count
+        FROM books b
+        LEFT JOIN reviews r ON r.book_id = b.id
+        WHERE b.id NOT IN (SELECT book_id FROM read_books WHERE user_id = ?)
+          AND b.id NOT IN (SELECT book_id FROM reading_log WHERE user_id = ? AND end_date IS NULL)
+        GROUP BY b.id
+        HAVING review_count > 0 AND avg_rating >= 3.5
+        ORDER BY RANDOM()
+        LIMIT 1
+      `).get(userId, userId)
+    : db.prepare(`
+        SELECT b.*,
+          COALESCE(AVG(r.rating), 0) as avg_rating,
+          COUNT(DISTINCT r.id) as review_count,
+          (SELECT COUNT(*) FROM read_books WHERE book_id = b.id) as read_count
+        FROM books b
+        LEFT JOIN reviews r ON r.book_id = b.id
+        GROUP BY b.id
+        HAVING review_count > 0 AND avg_rating >= 3.5
+        ORDER BY RANDOM()
+        LIMIT 1
+      `).get();
+
+  if (!book) { res.status(404).json({ error: "No books found" }); return; }
+  res.json(book);
+});
+
 router.get("/:id", (req: Request, res: Response) => {
   const book = db.prepare(`
     SELECT b.*, COALESCE(AVG(r.rating), 0) as avg_rating, COUNT(r.id) as review_count
@@ -505,13 +552,15 @@ router.get("/:id", (req: Request, res: Response) => {
     ? (db.prepare(`
         SELECT b.id, b.title, b.cover_url, b.series_order,
           COALESCE(AVG(r.rating), 0) as avg_rating,
-          COUNT(DISTINCT r.id) as review_count
+          COUNT(DISTINCT r.id) as review_count,
+          CASE WHEN rb.book_id IS NOT NULL THEN 1 ELSE 0 END as is_read
         FROM books b
         LEFT JOIN reviews r ON r.book_id = b.id
+        LEFT JOIN read_books rb ON rb.book_id = b.id AND rb.user_id = ?
         WHERE b.series = ? AND b.id != ?
         GROUP BY b.id
         ORDER BY b.series_order ASC, b.title ASC
-      `).all(seriesName, req.params.id) as any[])
+      `).all(userId ?? null, seriesName, req.params.id) as any[])
     : [];
 
   // Current user's rating for this book (rating-only or full review)
@@ -868,14 +917,34 @@ router.post("/:id/reading", authMiddleware, (req: AuthRequest, res: Response) =>
   }
 });
 
-// --- Similar books ---
+// --- Similar books (collaborative filtering with genre fallback) ---
 
 router.get("/:id/similar", (req: Request, res: Response) => {
-  const book = db.prepare("SELECT genre FROM books WHERE id = ?").get(req.params.id) as { genre: string } | undefined;
+  const book = db.prepare("SELECT id, genre FROM books WHERE id = ?").get(req.params.id) as { id: number; genre: string } | undefined;
   if (!book) { res.status(404).json({ error: "Book not found" }); return; }
-  if (!book.genre) { res.json([]); return; }
 
-  const similar = db.prepare(`
+  // Collaborative: books that fans of this book also rated highly
+  const collaborative = db.prepare(`
+    SELECT b.*,
+      COALESCE(AVG(r2.rating), 0) as avg_rating,
+      COUNT(DISTINCT r2.id) as review_count,
+      (SELECT COUNT(*) FROM read_books WHERE book_id = b.id) as read_count,
+      COUNT(DISTINCT fans.user_id) as shared_fans
+    FROM reviews fans
+    JOIN reviews co ON co.user_id = fans.user_id AND co.book_id != fans.book_id AND co.rating >= 4
+    JOIN books b ON b.id = co.book_id
+    LEFT JOIN reviews r2 ON r2.book_id = b.id
+    WHERE fans.book_id = ? AND fans.rating >= 4 AND b.id != ?
+    GROUP BY b.id
+    ORDER BY shared_fans DESC, avg_rating DESC
+    LIMIT 8
+  `).all(req.params.id, req.params.id) as any[];
+
+  if (collaborative.length >= 4) { res.json(collaborative); return; }
+
+  // Genre fallback
+  if (!book.genre) { res.json(collaborative); return; }
+  const genreBased = db.prepare(`
     SELECT b.*,
       COALESCE(AVG(r.rating), 0) as avg_rating,
       COUNT(DISTINCT r.id) as review_count,
@@ -886,9 +955,73 @@ router.get("/:id/similar", (req: Request, res: Response) => {
     GROUP BY b.id
     ORDER BY avg_rating DESC, review_count DESC
     LIMIT 8
-  `).all(book.genre, req.params.id);
+  `).all(book.genre, req.params.id) as any[];
 
-  res.json(similar);
+  // Merge: collaborative first, fill with genre-based (no duplicates)
+  const seen = new Set(collaborative.map((b: any) => b.id));
+  const merged = [...collaborative, ...genreBased.filter((b: any) => !seen.has(b.id))].slice(0, 8);
+  res.json(merged);
+});
+
+// --- Reading progress ---
+
+router.get("/reading/progress", authMiddleware, (req: AuthRequest, res: Response) => {
+  const progress = db.prepare(
+    "SELECT book_id, current_page, total_pages FROM reading_progress WHERE user_id = ?"
+  ).all(req.userId);
+  res.json(progress);
+});
+
+router.get("/series/progress", authMiddleware, (req: AuthRequest, res: Response) => {
+  const inProgress = db.prepare(`
+    SELECT b.series,
+      COUNT(DISTINCT b.id) as total,
+      COUNT(DISTINCT rb.book_id) as read_count
+    FROM books b
+    LEFT JOIN read_books rb ON rb.book_id = b.id AND rb.user_id = ?
+    WHERE b.series IS NOT NULL AND b.series != ''
+    GROUP BY b.series
+    HAVING read_count > 0 AND total > read_count AND total >= 2
+    ORDER BY read_count DESC
+    LIMIT 8
+  `).all(req.userId) as { series: string; total: number; read_count: number }[];
+
+  const result = inProgress.map((s) => {
+    const books = db.prepare(`
+      SELECT b.id, b.title, b.cover_url, b.series_order,
+        CASE WHEN rb.book_id IS NOT NULL THEN 1 ELSE 0 END as is_read
+      FROM books b
+      LEFT JOIN read_books rb ON rb.book_id = b.id AND rb.user_id = ?
+      WHERE b.series = ?
+      ORDER BY b.series_order ASC, b.title ASC
+    `).all(req.userId, s.series);
+    return { ...s, books };
+  });
+  res.json(result);
+});
+
+router.get("/:id/progress", authMiddleware, (req: AuthRequest, res: Response) => {
+  const row = db.prepare(
+    "SELECT current_page, total_pages FROM reading_progress WHERE user_id = ? AND book_id = ?"
+  ).get(req.userId, req.params.id) as { current_page: number; total_pages: number | null } | undefined;
+  res.json(row ?? { current_page: 0, total_pages: null });
+});
+
+router.put("/:id/progress", authMiddleware, (req: AuthRequest, res: Response) => {
+  const { current_page, total_pages } = req.body;
+  if (typeof current_page !== "number" || current_page < 0) {
+    res.status(400).json({ error: "current_page must be a non-negative number" });
+    return;
+  }
+  db.prepare(`
+    INSERT INTO reading_progress (user_id, book_id, current_page, total_pages, updated_at)
+    VALUES (?, ?, ?, ?, datetime('now'))
+    ON CONFLICT(user_id, book_id) DO UPDATE SET
+      current_page = excluded.current_page,
+      total_pages = excluded.total_pages,
+      updated_at = excluded.updated_at
+  `).run(req.userId, req.params.id, current_page, total_pages ?? null);
+  res.json({ current_page, total_pages: total_pages ?? null });
 });
 
 export default router;

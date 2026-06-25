@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Check } from "lucide-react";
-import type { Book } from "../api";
-import { getBooks, getReadBooks, getCurrentlyReadingBooks, getFriendsReading } from "../api";
+import type { Book, ReadingProgress } from "../api";
+import { getBooks, getReadBooks, getCurrentlyReadingBooks, getFriendsReading, getAllReadingProgress, getSurpriseBook } from "../api";
 import { useAuth } from "../context/AuthContext";
 
 const ROW_SIZE = 14;
@@ -224,6 +224,7 @@ function PillFilterRow({
 
 export default function Home() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [allBooks, setAllBooks] = useState<Book[]>([]);
   const [trendingBooks, setTrendingBooks] = useState<Book[]>([]);
   const [topRatedBooks, setTopRatedBooks] = useState<Book[]>([]);
@@ -231,6 +232,8 @@ export default function Home() {
   const [currentlyReading, setCurrentlyReading] = useState<Book[]>([]);
   const [readIds, setReadIds] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
+  const [progressMap, setProgressMap] = useState<Map<number, ReadingProgress>>(new Map());
+  const [surprising, setSurprising] = useState(false);
 
   const [selectedGenre, setSelectedGenre] = useState("All");
   const [selectedCountry, setSelectedCountry] = useState("All");
@@ -251,6 +254,11 @@ export default function Home() {
           .catch(() => {})
       );
       promises.push(getCurrentlyReadingBooks().then(setCurrentlyReading).catch(() => {}));
+      promises.push(
+        getAllReadingProgress()
+          .then((prog) => setProgressMap(new Map(prog.map((p) => [p.book_id, p]))))
+          .catch(() => {})
+      );
     }
     Promise.all(promises).finally(() => setLoading(false));
   }, [user]);
@@ -294,6 +302,16 @@ export default function Home() {
     setSelectedGenre("All");
     setSelectedCountry("All");
     setMinRating(0);
+  }
+
+  async function handleSurprise() {
+    if (surprising) return;
+    setSurprising(true);
+    try {
+      const book = await getSurpriseBook();
+      navigate(`/books/${book.id}`);
+    } catch {}
+    setSurprising(false);
   }
 
   return (
@@ -355,27 +373,34 @@ export default function Home() {
             <div className="flex-1 h-px bg-gray-700/60" />
           </div>
           <div className="flex gap-3 overflow-x-auto pb-1">
-            {currentlyReading.map((book) => (
-              <Link
-                key={book.id}
-                to={`/books/${book.id}`}
-                className="group shrink-0 w-20 relative"
-                title={book.title}
-              >
-                <div className="relative rounded-md overflow-hidden ring-1 ring-white/5 shadow-book transition-all duration-300 group-hover:shadow-book-hover group-hover:-translate-y-1">
-                  <img
-                    src={book.cover_url}
-                    alt={book.title}
-                    className="w-full aspect-[2/3] object-cover"
-                    loading="lazy"
-                  />
-                  <div className="absolute bottom-0 left-0 right-0 h-1 bg-gray-700">
-                    <div className="h-full bg-blue-400 w-1/3 rounded-full" />
+            {currentlyReading.map((book) => {
+              const prog = progressMap.get(book.id);
+              const pct = prog?.total_pages ? Math.min(100, (prog.current_page / prog.total_pages) * 100) : 0;
+              return (
+                <Link
+                  key={book.id}
+                  to={`/books/${book.id}`}
+                  className="group shrink-0 w-20 relative"
+                  title={book.title}
+                >
+                  <div className="relative rounded-md overflow-hidden ring-1 ring-white/5 shadow-book transition-all duration-300 group-hover:shadow-book-hover group-hover:-translate-y-1">
+                    <img
+                      src={book.cover_url}
+                      alt={book.title}
+                      className="w-full aspect-[2/3] object-cover"
+                      loading="lazy"
+                    />
+                    <div className="absolute bottom-0 left-0 right-0 h-1 bg-gray-700">
+                      <div className="h-full bg-blue-400 rounded-full transition-all duration-300" style={{ width: `${pct || 4}%` }} />
+                    </div>
                   </div>
-                </div>
-                <p className="mt-1 text-[10px] text-gray-400 leading-tight line-clamp-1">{book.title}</p>
-              </Link>
-            ))}
+                  <p className="mt-1 text-[10px] text-gray-400 leading-tight line-clamp-1">{book.title}</p>
+                  {prog?.total_pages ? (
+                    <p className="text-[10px] text-gray-600 leading-none">p. {prog.current_page}/{prog.total_pages}</p>
+                  ) : null}
+                </Link>
+              );
+            })}
           </div>
         </div>
       )}
@@ -407,6 +432,14 @@ export default function Home() {
               >
                 <path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
               </svg>
+            </button>
+
+            <button
+              onClick={handleSurprise}
+              disabled={surprising}
+              className="text-xs text-gray-500 hover:text-gray-300 transition-colors disabled:opacity-40"
+            >
+              {surprising ? "..." : "Surprise me"}
             </button>
 
             {filtersActive && (

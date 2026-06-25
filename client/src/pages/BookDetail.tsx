@@ -37,6 +37,8 @@ import {
   getBookReadingStatus,
   toggleReadingStatus,
   getSimilarBooks,
+  getReadingProgress,
+  updateReadingProgress,
 } from "../api";
 import { useAuth } from "../context/AuthContext";
 
@@ -125,28 +127,31 @@ function RatingHistogram({ reviews }: { reviews: any[] }) {
   );
 }
 
-function SeriesShelf({ book }: { book: BookDetailType }) {
+function SeriesShelf({ book, isRead }: { book: BookDetailType; isRead: boolean }) {
   if (!book.series || book.series_books.length === 0) return null;
 
-  // Build the full ordered list including the current book
+  const extendedSeriesBooks = book.series_books as (SeriesBook & { id: number; is_read?: number })[];
   const all = [
-    ...book.series_books,
-    { id: book.id, title: book.title, cover_url: book.cover_url, series_order: book.series_order, avg_rating: book.avg_rating, review_count: book.review_count },
+    ...extendedSeriesBooks,
+    { id: book.id, title: book.title, cover_url: book.cover_url, series_order: book.series_order, avg_rating: book.avg_rating, review_count: book.review_count, is_read: isRead ? 1 : 0 },
   ].sort((a, b) => {
     if (a.series_order !== b.series_order) return a.series_order - b.series_order;
     return a.title.localeCompare(b.title);
   });
 
+  const readCount = all.filter(s => s.is_read).length;
+
   return (
     <div className="mt-10">
-      <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">
-        {book.series} Series
-      </h2>
-      <p className="text-xs text-gray-400 dark:text-gray-500 mb-4">
-        {all.length} book{all.length !== 1 ? "s" : ""} in this series
-      </p>
+      <div className="flex items-center gap-3 mb-4">
+        <span className="text-[11px] font-semibold uppercase tracking-widest text-gray-400 dark:text-gray-500 whitespace-nowrap">
+          {book.series} Series
+        </span>
+        <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700/60" />
+        <span className="text-[11px] text-gray-400 dark:text-gray-500">{readCount}/{all.length} read</span>
+      </div>
       <div className="flex flex-wrap gap-3">
-        {all.map((s: SeriesBook & { id: number }) => {
+        {all.map((s) => {
           const isCurrent = s.id === book.id;
           return (
             <Link
@@ -164,6 +169,11 @@ function SeriesShelf({ book }: { book: BookDetailType }) {
                 />
                 {isCurrent && (
                   <div className="absolute inset-0 bg-blue-500/10" />
+                )}
+                {s.is_read && !isCurrent && (
+                  <span className="absolute top-1.5 right-1.5 bg-blue-500 text-white w-5 h-5 rounded-full flex items-center justify-center">
+                    <Check size={10} strokeWidth={3} />
+                  </span>
                 )}
                 {s.series_order > 0 && (
                   <span className="absolute bottom-1 left-1 bg-black/70 text-white text-[10px] font-bold px-1.5 py-0.5 rounded">
@@ -326,6 +336,9 @@ export default function BookDetail() {
   const [listMsg, setListMsg] = useState("");
   const [currentlyReading, setCurrentlyReading] = useState(false);
   const [similarBooks, setSimilarBooks] = useState<Book[]>([]);
+  const [progressPage, setProgressPage] = useState("");
+  const [progressTotal, setProgressTotal] = useState("");
+  const [progressSaved, setProgressSaved] = useState(false);
 
   const loadData = useCallback(async (bookId: number) => {
     const [b, similar] = await Promise.all([
@@ -337,14 +350,17 @@ export default function BookDetail() {
     setSimilarBooks(similar);
     if (user) {
       try {
-        const [readStatus, readingStatus, tbrStatus] = await Promise.all([
+        const [readStatus, readingStatus, tbrStatus, prog] = await Promise.all([
           getReadStatus(bookId),
           getBookReadingStatus(bookId),
           getTbrStatus(bookId),
+          getReadingProgress(bookId),
         ]);
         setRead(readStatus);
         setCurrentlyReading(readingStatus);
         setInTbr(tbrStatus);
+        if (prog.current_page > 0) setProgressPage(String(prog.current_page));
+        if (prog.total_pages) setProgressTotal(String(prog.total_pages));
       } catch {}
     }
   }, [user]);
@@ -416,6 +432,18 @@ export default function BookDetail() {
     try {
       const nowReading = await toggleReadingStatus(book.id);
       setCurrentlyReading(nowReading);
+    } catch {}
+  }
+
+  async function handleSaveProgress() {
+    if (!book || !user) return;
+    const page = parseInt(progressPage, 10);
+    const total = progressTotal ? parseInt(progressTotal, 10) : undefined;
+    if (!page || page < 0) return;
+    try {
+      await updateReadingProgress(book.id, page, total);
+      setProgressSaved(true);
+      setTimeout(() => setProgressSaved(false), 2000);
     } catch {}
   }
 
@@ -579,6 +607,35 @@ export default function BookDetail() {
             </div>
           )}
 
+          {user && currentlyReading && (
+            <div className="mt-3 flex items-center gap-2">
+              <span className="text-xs text-gray-500 dark:text-gray-400 shrink-0">Page</span>
+              <input
+                type="number"
+                min="0"
+                value={progressPage}
+                onChange={(e) => setProgressPage(e.target.value)}
+                placeholder="0"
+                className="w-16 text-xs rounded border dark:border-gray-600 dark:bg-gray-800 dark:text-white px-2 py-1 text-center"
+              />
+              <span className="text-xs text-gray-500">/</span>
+              <input
+                type="number"
+                min="1"
+                value={progressTotal}
+                onChange={(e) => setProgressTotal(e.target.value)}
+                placeholder="total"
+                className="w-16 text-xs rounded border dark:border-gray-600 dark:bg-gray-800 dark:text-white px-2 py-1 text-center"
+              />
+              <button
+                onClick={handleSaveProgress}
+                className="text-xs text-blue-500 dark:text-blue-400 hover:text-blue-400 transition-colors font-medium"
+              >
+                {progressSaved ? "Saved" : "Save"}
+              </button>
+            </div>
+          )}
+
           <div className="mt-3 flex flex-wrap gap-3">
             {user && (
               <button
@@ -669,7 +726,7 @@ export default function BookDetail() {
         </div>
       </div>
 
-      <SeriesShelf book={book} />
+      <SeriesShelf book={book} isRead={read} />
 
       {similarBooks.length > 0 && (
         <div className="mt-10">

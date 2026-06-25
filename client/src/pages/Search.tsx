@@ -226,7 +226,6 @@ export default function Search() {
 
       {!loading && query.trim() && !hasResults && (
         <div className="mt-14 text-center">
-          <div className="text-4xl mb-3">🔍</div>
           <p className="text-base font-medium text-gray-300 mb-1">No results for "{query}"</p>
           <p className="text-sm text-gray-500">Try a different title, author name, or genre.</p>
         </div>
@@ -234,7 +233,6 @@ export default function Search() {
 
       {!loading && !query.trim() && (
         <div className="mt-16 text-center">
-          <div className="text-4xl mb-3">📚</div>
           <p className="text-sm text-gray-500 dark:text-gray-400">
             Search for books, authors, or reading lists.
           </p>

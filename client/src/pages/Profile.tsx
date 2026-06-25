@@ -2,11 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Camera, Pencil, Check, X, Plus, Lock } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
-import type { Book, BookList, FavoriteBook } from "../api";
+import type { Book, BookList, FavoriteBook, ReadingProgress, SeriesProgress } from "../api";
 import {
   getTbrBooks, getReadBooks, getDiaryEntries,
   getCurrentlyReadingBooks, getFavoriteBooks, setFavoriteBooks,
-  getUserLists, search,
+  getUserLists, search, getAllReadingProgress, getSeriesProgress, getUserStats,
 } from "../api";
 
 function avatarColor(name: string): string {
@@ -174,6 +174,9 @@ export default function Profile() {
   const [savingBio, setSavingBio] = useState(false);
 
   const [editingSlot, setEditingSlot] = useState<number | null>(null);
+  const [progressMap, setProgressMap] = useState<Map<number, ReadingProgress>>(new Map());
+  const [seriesInProgress, setSeriesInProgress] = useState<SeriesProgress[]>([]);
+  const [streak, setStreak] = useState(0);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -186,6 +189,9 @@ export default function Profile() {
       getCurrentlyReadingBooks().then(setCurrentlyReading).catch(() => {}),
       getFavoriteBooks(user.id).then(setFavorites).catch(() => {}),
       getUserLists(user.id).then(setUserLists).catch(() => {}),
+      getAllReadingProgress().then((p) => setProgressMap(new Map(p.map((r) => [r.book_id, r])))).catch(() => {}),
+      getSeriesProgress().then(setSeriesInProgress).catch(() => {}),
+      getUserStats(user.id).then((s) => setStreak(s.current_streak)).catch(() => {}),
     ]).finally(() => setLoading(false));
   }, [user]);
 
@@ -294,6 +300,13 @@ export default function Profile() {
                 <span className="text-gray-700 dark:text-gray-300 font-semibold ml-2">{diaryCount}</span>
                 <span className="mr-2"><Link to="/diary" className="hover:text-blue-500 dark:hover:text-blue-400 transition-colors">diary entries</Link></span>
                 <span className="text-gray-300 dark:text-gray-600">·</span>
+                {streak > 0 && (
+                  <>
+                    <span className="text-gray-700 dark:text-gray-300 font-semibold ml-2">{streak}</span>
+                    <span className="mr-2">day streak</span>
+                    <span className="text-gray-300 dark:text-gray-600">·</span>
+                  </>
+                )}
                 <Link to={`/stats/${user.id}`} className="ml-2 text-xs font-medium text-blue-500 dark:text-blue-400 hover:underline">Stats →</Link>
               </>
             )}
@@ -339,15 +352,61 @@ export default function Profile() {
             <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700/60" />
           </div>
           <div className="flex gap-3 overflow-x-auto pb-1">
-            {currentlyReading.map((book) => (
-              <Link key={book.id} to={`/books/${book.id}`} className="group shrink-0 w-16" title={book.title}>
-                <div className="relative rounded overflow-hidden bg-gray-800 shadow-md">
-                  <img src={book.cover_url} alt={book.title} className="w-full aspect-[2/3] object-cover transition-transform duration-200 group-hover:scale-105" loading="lazy" />
-                  <div className="absolute bottom-0 left-0 right-0 h-1 bg-gray-700">
-                    <div className="h-full bg-sky-400 w-1/3 rounded-full" />
+            {currentlyReading.map((book) => {
+              const prog = progressMap.get(book.id);
+              const pct = prog?.total_pages ? Math.min(100, (prog.current_page / prog.total_pages) * 100) : 0;
+              return (
+                <Link key={book.id} to={`/books/${book.id}`} className="group shrink-0 w-16" title={book.title}>
+                  <div className="relative rounded overflow-hidden bg-gray-800 shadow-md">
+                    <img src={book.cover_url} alt={book.title} className="w-full aspect-[2/3] object-cover transition-transform duration-200 group-hover:scale-105" loading="lazy" />
+                    <div className="absolute bottom-0 left-0 right-0 h-1 bg-gray-700">
+                      <div className="h-full bg-sky-400 rounded-full transition-all duration-300" style={{ width: `${pct || 4}%` }} />
+                    </div>
                   </div>
+                  {prog?.total_pages ? (
+                    <p className="mt-0.5 text-[9px] text-gray-600 leading-none tabular-nums">{prog.current_page}/{prog.total_pages}</p>
+                  ) : null}
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ── Unfinished Series ───────────────────────────────────────────────── */}
+      {!loading && seriesInProgress.length > 0 && (
+        <div className="mb-10">
+          <div className="flex items-center gap-3 mb-3">
+            <span className="text-[11px] font-semibold uppercase tracking-widest text-gray-400 dark:text-gray-500 whitespace-nowrap">Unfinished Series</span>
+            <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700/60" />
+          </div>
+          <div className="space-y-5">
+            {seriesInProgress.map((s) => (
+              <div key={s.series}>
+                <div className="flex items-baseline gap-2 mb-2">
+                  <span className="text-sm font-medium text-gray-200">{s.series}</span>
+                  <span className="text-xs text-gray-500">{s.read_count} / {s.total}</span>
                 </div>
-              </Link>
+                <div className="flex gap-1.5 overflow-x-auto pb-0.5">
+                  {s.books.map((b) => (
+                    <Link
+                      key={b.id}
+                      to={`/books/${b.id}`}
+                      title={b.title}
+                      className="group shrink-0 w-12 relative"
+                    >
+                      <div className={`relative rounded overflow-hidden ${b.is_read ? "" : "opacity-40"}`}>
+                        <img src={b.cover_url} alt={b.title} className="w-full aspect-[2/3] object-cover transition-opacity group-hover:opacity-100" loading="lazy" />
+                        {b.is_read ? (
+                          <span className="absolute top-0.5 right-0.5 bg-blue-500 text-white w-3.5 h-3.5 rounded-full flex items-center justify-center">
+                            <Check size={8} strokeWidth={3} />
+                          </span>
+                        ) : null}
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
         </div>

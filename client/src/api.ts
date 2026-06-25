@@ -719,6 +719,93 @@ export async function deletePost(postId: number): Promise<void> {
   if (!res.ok) throw new Error("Failed to delete post");
 }
 
+// --- Reading progress ---
+
+export interface ReadingProgress {
+  book_id: number;
+  current_page: number;
+  total_pages: number | null;
+}
+
+export async function getAllReadingProgress(): Promise<ReadingProgress[]> {
+  const res = await fetch(`${API}/books/reading/progress`, { headers: authHeaders() });
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function getReadingProgress(bookId: number): Promise<ReadingProgress> {
+  const res = await fetch(`${API}/books/${bookId}/progress`, { headers: authHeaders() });
+  if (!res.ok) return { book_id: bookId, current_page: 0, total_pages: null };
+  return res.json();
+}
+
+export async function updateReadingProgress(bookId: number, current_page: number, total_pages?: number | null): Promise<ReadingProgress> {
+  const res = await fetch(`${API}/books/${bookId}/progress`, {
+    method: "PUT",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ current_page, total_pages: total_pages ?? null }),
+  });
+  if (!res.ok) throw new Error("Failed to update progress");
+  return res.json();
+}
+
+export async function getSurpriseBook(): Promise<Book> {
+  const res = await fetch(`${API}/books/surprise`, { headers: authHeaders() });
+  if (!res.ok) throw new Error("No surprise found");
+  return pc(await res.json() as Book);
+}
+
+// --- Series progress ---
+
+export interface SeriesProgress {
+  series: string;
+  total: number;
+  read_count: number;
+  books: { id: number; title: string; cover_url: string; series_order: number; is_read: number }[];
+}
+
+export async function getSeriesProgress(): Promise<SeriesProgress[]> {
+  const res = await fetch(`${API}/books/series/progress`, { headers: authHeaders() });
+  if (!res.ok) return [];
+  const data = await res.json() as SeriesProgress[];
+  return data.map(s => ({ ...s, books: s.books.map(b => ({ ...b, cover_url: proxyCover(b.cover_url) })) }));
+}
+
+// --- Challenges ---
+
+export interface Challenge {
+  id: number;
+  user_id: number;
+  type: string;
+  target: number;
+  year: number;
+  progress: number;
+  created_at: string;
+}
+
+export async function getChallenges(): Promise<Challenge[]> {
+  const res = await fetch(`${API}/challenges`, { headers: authHeaders() });
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function addChallenge(type: string, target: number): Promise<Challenge> {
+  const res = await fetch(`${API}/challenges`, {
+    method: "POST",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ type, target }),
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error || "Failed to add challenge");
+  }
+  return res.json();
+}
+
+export async function deleteChallenge(id: number): Promise<void> {
+  await fetch(`${API}/challenges/${id}`, { method: "DELETE", headers: authHeaders() });
+}
+
 // --- Search ---
 
 export interface SearchAuthorResult {

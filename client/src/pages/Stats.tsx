@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { getUserStats } from "../api";
-import type { UserStats } from "../api";
+import { X } from "lucide-react";
+import { getUserStats, getChallenges, addChallenge, deleteChallenge } from "../api";
+import type { UserStats, Challenge } from "../api";
+import { useAuth } from "../context/AuthContext";
 
 function AnimatedNumber({ value }: { value: number }) {
   const [count, setCount] = useState(0);
@@ -78,12 +80,23 @@ function Bar({ fraction, color = "bg-blue-500" }: { fraction: number; color?: st
   );
 }
 
+const CHALLENGE_LABELS: Record<string, { label: string; unit: string; description: string }> = {
+  genre_explorer: { label: "Genre Explorer", unit: "genres", description: "Read books across different genres this year" },
+  author_variety: { label: "Author Variety", unit: "authors", description: "Read books by different authors this year" },
+  series_complete: { label: "Series Finisher", unit: "series", description: "Read all books in a complete series" },
+};
+
 export default function Stats() {
   const { id } = useParams();
+  const { user } = useAuth();
   const [stats, setStats] = useState<UserStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [goal, setGoal] = useState<number | null>(null);
   const [goalInput, setGoalInput] = useState("");
+  const [challenges, setChallenges] = useState<Challenge[]>([]);
+  const [showChallengeForm, setShowChallengeForm] = useState(false);
+  const [newChallengeType, setNewChallengeType] = useState("genre_explorer");
+  const [newChallengeTarget, setNewChallengeTarget] = useState("");
 
   useEffect(() => {
     if (!id) return;
@@ -93,7 +106,10 @@ export default function Stats() {
       .finally(() => setLoading(false));
     const saved = localStorage.getItem(getGoalKey(id));
     if (saved) setGoal(Number(saved));
-  }, [id]);
+    if (user && String(user.id) === id) {
+      getChallenges().then(setChallenges).catch(() => {});
+    }
+  }, [id, user]);
 
   function saveGoal() {
     const n = parseInt(goalInput, 10);
@@ -107,6 +123,25 @@ export default function Stats() {
     if (!id) return;
     localStorage.removeItem(getGoalKey(id));
     setGoal(null);
+  }
+
+  async function handleAddChallenge() {
+    const n = parseInt(newChallengeTarget, 10);
+    if (!n || n < 1) return;
+    try {
+      const c = await addChallenge(newChallengeType, n);
+      setChallenges((prev) => [...prev, c]);
+      setShowChallengeForm(false);
+      setNewChallengeTarget("");
+      setNewChallengeType("genre_explorer");
+    } catch (err: any) {
+      alert(err.message || "Failed to add challenge");
+    }
+  }
+
+  async function handleDeleteChallenge(challengeId: number) {
+    await deleteChallenge(challengeId).catch(() => {});
+    setChallenges((prev) => prev.filter((c) => c.id !== challengeId));
   }
 
   if (loading) return <p className="text-sm text-gray-400 dark:text-gray-500">Loading...</p>;
@@ -207,7 +242,7 @@ export default function Stats() {
             </div>
             {stats.read_this_year >= goal ? (
               <p className="mt-2 text-xs text-blue-500 dark:text-blue-400 font-medium">
-                Goal complete! 🎉
+                Goal complete!
               </p>
             ) : (
               <p className="mt-2 text-xs text-gray-400 dark:text-gray-500">
@@ -242,6 +277,109 @@ export default function Stats() {
           </div>
         )}
       </div>
+
+      {/* ── Challenges ─────────────────────────────────────────────────────── */}
+      {user && String(user.id) === id && (
+        <div className="mb-10">
+          <div className="flex items-center gap-3 mb-4">
+            <span className="text-[11px] font-semibold uppercase tracking-widest text-gray-400 dark:text-gray-500 whitespace-nowrap">
+              Challenges
+            </span>
+            <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700/60" />
+            {!showChallengeForm && (
+              <button
+                onClick={() => setShowChallengeForm(true)}
+                className="text-xs font-medium text-blue-500 dark:text-blue-400 hover:underline"
+              >
+                + Add
+              </button>
+            )}
+          </div>
+
+          {challenges.length === 0 && !showChallengeForm && (
+            <p className="text-sm text-gray-400 dark:text-gray-500">
+              No active challenges.{" "}
+              <button onClick={() => setShowChallengeForm(true)} className="text-blue-500 dark:text-blue-400 hover:underline">
+                Add one
+              </button>
+            </p>
+          )}
+
+          {challenges.length > 0 && (
+            <div className="space-y-4 mb-4">
+              {challenges.map((c) => {
+                const meta = CHALLENGE_LABELS[c.type];
+                const pct = Math.min(100, (c.progress / c.target) * 100);
+                const done = c.progress >= c.target;
+                return (
+                  <div key={c.id}>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                        {meta?.label ?? c.type}
+                      </span>
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs tabular-nums text-gray-400 dark:text-gray-500">
+                          {c.progress} / {c.target} {meta?.unit}
+                        </span>
+                        <button
+                          onClick={() => handleDeleteChallenge(c.id)}
+                          className="text-gray-400 hover:text-red-400 transition-colors"
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                    </div>
+                    <div className="h-1.5 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-500 ${done ? "bg-blue-400" : "bg-blue-500"}`}
+                        style={{ width: `${Math.max(pct, pct > 0 ? 2 : 0)}%` }}
+                      />
+                    </div>
+                    {done && (
+                      <p className="mt-1 text-xs text-blue-500 dark:text-blue-400 font-medium">Complete</p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {showChallengeForm && (
+            <div className="flex flex-wrap items-end gap-2 mt-2">
+              <select
+                value={newChallengeType}
+                onChange={(e) => setNewChallengeType(e.target.value)}
+                className="text-sm rounded-md border dark:border-gray-600 dark:bg-gray-800 dark:text-white px-3 py-1.5 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="genre_explorer">Genre Explorer</option>
+                <option value="author_variety">Author Variety</option>
+                <option value="series_complete">Series Finisher</option>
+              </select>
+              <input
+                type="number"
+                min="1"
+                value={newChallengeTarget}
+                onChange={(e) => setNewChallengeTarget(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleAddChallenge()}
+                placeholder="Target"
+                className="w-20 text-sm rounded-md border dark:border-gray-600 dark:bg-gray-800 dark:text-white px-3 py-1.5 focus:ring-blue-500 focus:border-blue-500"
+              />
+              <button
+                onClick={handleAddChallenge}
+                className="text-sm text-blue-500 dark:text-blue-400 font-medium hover:text-blue-400 transition-colors"
+              >
+                Add
+              </button>
+              <button
+                onClick={() => { setShowChallengeForm(false); setNewChallengeTarget(""); }}
+                className="text-sm text-gray-400 hover:text-gray-300 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── Favorite author ─────────────────────────────────────────────────── */}
       {stats.favorite_author && (

@@ -240,6 +240,41 @@ db.exec(`
   )
 `);
 
+// Add reading_progress table
+db.exec(`
+  CREATE TABLE IF NOT EXISTS reading_progress (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    book_id INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+    current_page INTEGER NOT NULL DEFAULT 0,
+    total_pages INTEGER,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(user_id, book_id)
+  )
+`);
+
+// Add user_challenges table
+db.exec(`
+  CREATE TABLE IF NOT EXISTS user_challenges (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    type TEXT NOT NULL,
+    target INTEGER NOT NULL,
+    year INTEGER NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(user_id, type, year)
+  )
+`);
+
+// Ensure series columns exist (safe to re-run)
+const booksColsV2 = db.pragma("table_info(books)") as { name: string }[];
+if (!booksColsV2.find((c) => c.name === "series")) {
+  db.exec("ALTER TABLE books ADD COLUMN series TEXT");
+}
+if (!booksColsV2.find((c) => c.name === "series_order")) {
+  db.exec("ALTER TABLE books ADD COLUMN series_order NUMERIC NOT NULL DEFAULT 0");
+}
+
 // Seed default discussion categories if empty
 const existingCategories = db.prepare("SELECT COUNT(*) as count FROM discussion_categories").get() as { count: number };
 if (existingCategories.count === 0) {
