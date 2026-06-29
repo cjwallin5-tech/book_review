@@ -148,7 +148,7 @@ export default function App() {
                 </button>
               </div>
             ) : (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-4">
                 <Link
                   to="/login"
                   className="text-sm text-gray-400 hover:text-white transition-colors"

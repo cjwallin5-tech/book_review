@@ -145,13 +145,11 @@ export default function Register() {
             onChange={(e) => setUsername(e.target.value)}
             onBlur={(e) => handleBlur("username", e.target.value)}
             autoComplete="username"
-            placeholder="e.g. book_lover_42"
+            placeholder="Username"
             className={`${inputBase} ${fieldErrors.username ? inputErr : inputOk}`}
           />
-          {fieldErrors.username ? (
+          {fieldErrors.username && (
             <p className="mt-1 text-xs text-red-500">{fieldErrors.username}</p>
-          ) : (
-            <p className="mt-1 text-xs text-gray-400">3–20 characters, letters, numbers, underscores</p>
           )}
         </div>
 
@@ -192,7 +190,7 @@ export default function Register() {
               }}
               onBlur={(e) => handleBlur("password", e.target.value)}
               autoComplete="new-password"
-              placeholder="Min. 8 characters"
+              placeholder="Password"
               className={`${inputBase} pr-10 ${fieldErrors.password ? inputErr : inputOk}`}
             />
             <button
@@ -240,12 +238,8 @@ export default function Register() {
             </div>
           )}
 
-          {fieldErrors.password ? (
+          {fieldErrors.password && (
             <p className="mt-1 text-xs text-red-500">{fieldErrors.password}</p>
-          ) : (
-            <p className="mt-1 text-xs text-gray-400">
-              8+ chars · uppercase · lowercase · number · special character
-            </p>
           )}
         </div>
 
@@ -267,7 +261,7 @@ export default function Register() {
               }}
               onBlur={(e) => handleBlur("confirmPassword", e.target.value)}
               autoComplete="new-password"
-              placeholder="Re-enter your password"
+              placeholder="Confirm password"
               className={`${inputBase} pr-10 ${fieldErrors.confirmPassword ? inputErr : inputOk}`}
             />
             <button
