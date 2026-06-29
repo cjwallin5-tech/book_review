@@ -3,23 +3,74 @@ import bcrypt from "bcryptjs";
 import db from "../db.js";
 import { generateToken, authMiddleware } from "../middleware/auth.js";
 const router = Router();
+function validateUsername(username) {
+    if (!username || username.length < 3 || username.length > 20) {
+        return "Username must be between 3 and 20 characters";
+    }
+    if (!/^[a-zA-Z0-9_]+$/.test(username)) {
+        return "Username may only contain letters, numbers, and underscores";
+    }
+    return null;
+}
+function validatePassword(password) {
+    if (!password || password.length < 8) {
+        return "Password must be at least 8 characters";
+    }
+    if (!/[A-Z]/.test(password)) {
+        return "Password must contain at least one uppercase letter";
+    }
+    if (!/[a-z]/.test(password)) {
+        return "Password must contain at least one lowercase letter";
+    }
+    if (!/[0-9]/.test(password)) {
+        return "Password must contain at least one number";
+    }
+    if (!/[^A-Za-z0-9]/.test(password)) {
+        return "Password must contain at least one special character";
+    }
+    return null;
+}
+function validateEmail(email) {
+    if (!email || email.trim().length === 0) {
+        return "Email is required";
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email.trim())) {
+        return "Please enter a valid email address";
+    }
+    return null;
+}
 router.post("/register", (req, res) => {
-    const { username, password } = req.body;
-    if (!username || !password) {
-        res.status(400).json({ error: "username and password are required" });
+    const { username, email, password } = req.body;
+    const usernameError = validateUsername(username);
+    if (usernameError) {
+        res.status(400).json({ error: usernameError, field: "username" });
         return;
     }
-    if (password.length < 4) {
-        res.status(400).json({ error: "Password must be at least 4 characters" });
+    const emailError = validateEmail(email);
+    if (emailError) {
+        res.status(400).json({ error: emailError, field: "email" });
         return;
     }
-    const existing = db.prepare("SELECT id FROM users WHERE username = ?").get(username);
-    if (existing) {
-        res.status(409).json({ error: "Username already taken" });
+    const passwordError = validatePassword(password);
+    if (passwordError) {
+        res.status(400).json({ error: passwordError, field: "password" });
         return;
     }
-    const hashed = bcrypt.hashSync(password, 10);
-    const result = db.prepare("INSERT INTO users (username, password) VALUES (?, ?)").run(username, hashed);
+    const existingUsername = db.prepare("SELECT id FROM users WHERE username = ?").get(username);
+    if (existingUsername) {
+        res.status(409).json({ error: "Username already taken", field: "username" });
+        return;
+    }
+    const existingEmail = db.prepare("SELECT id FROM users WHERE email = ?").get(email.trim().toLowerCase());
+    if (existingEmail) {
+        res.status(409).json({ error: "An account with this email already exists", field: "email" });
+        return;
+    }
+    const hashed = bcrypt.hashSync(password, 12);
+    const result = db
+        .prepare("INSERT INTO users (username, email, password) VALUES (?, ?, ?)")
+        .run(username, email.trim().toLowerCase(), hashed);
     const token = generateToken(result.lastInsertRowid);
     res.status(201).json({
         token,

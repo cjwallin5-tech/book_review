@@ -2,7 +2,7 @@ import Database from "better-sqlite3";
 import path from "path";
 import { fileURLToPath } from "url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const dbPath = path.join(__dirname, "..", "books.db");
+const dbPath = process.env.DB_PATH ?? path.join(__dirname, "..", "books.db");
 const db = new Database(dbPath);
 db.pragma("journal_mode = WAL");
 db.pragma("foreign_keys = ON");
@@ -186,13 +186,16 @@ if (!readingLogCols.find((c) => c.name === "start_date")) {
 }
 // Drop reading_journal table if it exists (safe to run every time)
 db.exec("DROP TABLE IF EXISTS reading_journal");
-// Add bio and avatar_url to users if missing
+// Add bio, avatar_url, and email to users if missing
 const userProfileCols = db.pragma("table_info(users)");
 if (!userProfileCols.find((c) => c.name === "bio")) {
     db.exec("ALTER TABLE users ADD COLUMN bio TEXT NOT NULL DEFAULT ''");
 }
 if (!userProfileCols.find((c) => c.name === "avatar_url")) {
     db.exec("ALTER TABLE users ADD COLUMN avatar_url TEXT NOT NULL DEFAULT ''");
+}
+if (!userProfileCols.find((c) => c.name === "email")) {
+    db.exec("ALTER TABLE users ADD COLUMN email TEXT NOT NULL DEFAULT ''");
 }
 // Migrate rating column from INTEGER to REAL to support half-star ratings (0.5 increments)
 const ratingColType = db.pragma("table_info(reviews)")
