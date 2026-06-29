@@ -145,7 +145,6 @@ export default function Register() {
             onChange={(e) => setUsername(e.target.value)}
             onBlur={(e) => handleBlur("username", e.target.value)}
             autoComplete="username"
-            placeholder="Username"
             className={`${inputBase} ${fieldErrors.username ? inputErr : inputOk}`}
           />
           {fieldErrors.username && (
@@ -164,7 +163,6 @@ export default function Register() {
             onChange={(e) => setEmail(e.target.value)}
             onBlur={(e) => handleBlur("email", e.target.value)}
             autoComplete="email"
-            placeholder="you@example.com"
             className={`${inputBase} ${fieldErrors.email ? inputErr : inputOk}`}
           />
           {fieldErrors.email && (
@@ -190,7 +188,6 @@ export default function Register() {
               }}
               onBlur={(e) => handleBlur("password", e.target.value)}
               autoComplete="new-password"
-              placeholder="Password"
               className={`${inputBase} pr-10 ${fieldErrors.password ? inputErr : inputOk}`}
             />
             <button
@@ -261,7 +258,6 @@ export default function Register() {
               }}
               onBlur={(e) => handleBlur("confirmPassword", e.target.value)}
               autoComplete="new-password"
-              placeholder="Confirm password"
               className={`${inputBase} pr-10 ${fieldErrors.confirmPassword ? inputErr : inputOk}`}
             />
             <button
