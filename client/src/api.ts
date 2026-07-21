@@ -71,6 +71,7 @@ export interface BookDetail extends Book {
   reviews: Review[];
   series_books: SeriesBook[];
   user_rating: number | null;
+  user_review_id: number | null;
 }
 
 // --- Token management ---
@@ -177,6 +178,14 @@ export async function addReview(
   });
   if (!res.ok) throw new Error("Failed to add review");
   return res.json();
+}
+
+export async function deleteReview(bookId: number, reviewId: number): Promise<void> {
+  const res = await fetch(`${API}/books/${bookId}/reviews/${reviewId}`, {
+    method: "DELETE",
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error("Failed to delete review");
 }
 
 export interface OpenLibraryBook {

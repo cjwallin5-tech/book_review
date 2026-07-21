@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
-import { Heart, MessageCircle, BookOpen, Check } from "lucide-react";
+import { Heart, MessageCircle, BookOpen, Check, Trash2 } from "lucide-react";
 
 const FICTION_GENRES = new Set([
   "Fiction", "Science Fiction", "Fantasy", "Romance", "Mystery", "Thriller",
@@ -22,6 +22,7 @@ import type { BookDetail as BookDetailType, ReviewComment, SeriesBook, Book } fr
 import {
   getBook,
   addReview,
+  deleteReview,
   addTbr,
   removeTbr,
   getTbrStatus,
@@ -197,13 +198,35 @@ function SeriesShelf({ book, isRead }: { book: BookDetailType; isRead: boolean }
   );
 }
 
-function ReviewCard({ review, bookId, user }: { review: any; bookId: number; user: any }) {
+function ReviewCard({
+  review,
+  bookId,
+  user,
+  onDelete,
+}: {
+  review: any;
+  bookId: number;
+  user: any;
+  onDelete: (reviewId: number) => void;
+}) {
   const [liked, setLiked] = useState(review.is_liked);
   const [likeCount, setLikeCount] = useState(review.like_count);
   const [showComments, setShowComments] = useState(false);
   const [comments, setComments] = useState<ReviewComment[]>([]);
   const [commentText, setCommentText] = useState("");
   const [loadingComments, setLoadingComments] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  async function handleDelete() {
+    if (!window.confirm("Delete this review?")) return;
+    setDeleting(true);
+    try {
+      await deleteReview(bookId, review.id);
+      onDelete(review.id);
+    } catch {
+      setDeleting(false);
+    }
+  }
 
   async function handleLike() {
     if (!user) return;
@@ -245,7 +268,19 @@ function ReviewCard({ review, bookId, user }: { review: any; bookId: number; use
     <div className="bg-white dark:bg-gray-800 rounded-md shadow-sm dark:shadow-none p-4">
       <div className="flex items-center justify-between">
         <span className="text-sm font-semibold text-gray-900 dark:text-white">{review.user_name}</span>
-        <StarRatingDisplay rating={review.rating} />
+        <div className="flex items-center gap-2">
+          <StarRatingDisplay rating={review.rating} />
+          {user && review.user_id === user.id && (
+            <button
+              onClick={handleDelete}
+              disabled={deleting}
+              title="Delete review"
+              className="text-gray-400 dark:text-gray-500 hover:text-red-400 transition-colors disabled:opacity-50"
+            >
+              <Trash2 size={14} />
+            </button>
+          )}
+        </div>
       </div>
       <p className="mt-2 text-sm leading-relaxed text-gray-700 dark:text-gray-300">{review.content}</p>
       <p className="mt-1.5 text-xs text-gray-400 dark:text-gray-500">
@@ -324,6 +359,8 @@ export default function BookDetail() {
   const [read, setRead] = useState(false);
 
   const [userRating, setUserRating] = useState<number | null>(null);
+  const [userReviewId, setUserReviewId] = useState<number | null>(null);
+  const [removingRating, setRemovingRating] = useState(false);
   const [rating, setRating] = useState(5);
   const [content, setContent] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -347,6 +384,7 @@ export default function BookDetail() {
     ]);
     setBook(b);
     setUserRating(b.user_rating);
+    setUserReviewId(b.user_review_id);
     setSimilarBooks(similar);
     if (user) {
       try {
@@ -450,8 +488,9 @@ export default function BookDetail() {
   async function handleQuickRate(newRating: number) {
     if (!id || !user) return;
     try {
-      await addReview(Number(id), { rating: newRating, content: "" });
+      const review = await addReview(Number(id), { rating: newRating, content: "" });
       setUserRating(newRating);
+      setUserReviewId(review.id);
       setRead(true);
       setBook((prev) => {
         if (!prev) return prev;
@@ -469,6 +508,50 @@ export default function BookDetail() {
       });
     } catch (err) {
       console.error(err);
+    }
+  }
+
+  async function handleRemoveRating() {
+    if (!book || !user || userReviewId === null) return;
+    setRemovingRating(true);
+    try {
+      await deleteReview(book.id, userReviewId);
+      const removedRating = userRating ?? 0;
+      setBook((prev) => {
+        if (!prev) return prev;
+        const remaining = prev.review_count - 1;
+        return {
+          ...prev,
+          reviews: prev.reviews.filter((r) => r.id !== userReviewId),
+          review_count: remaining,
+          avg_rating: remaining > 0 ? (prev.avg_rating * prev.review_count - removedRating) / remaining : 0,
+        };
+      });
+      setUserRating(null);
+      setUserReviewId(null);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setRemovingRating(false);
+    }
+  }
+
+  function handleReviewDeleted(reviewId: number) {
+    setBook((prev) => {
+      if (!prev) return prev;
+      const removed = prev.reviews.find((r) => r.id === reviewId);
+      if (!removed) return prev;
+      const remaining = prev.review_count - 1;
+      return {
+        ...prev,
+        reviews: prev.reviews.filter((r) => r.id !== reviewId),
+        review_count: remaining,
+        avg_rating: remaining > 0 ? (prev.avg_rating * prev.review_count - removed.rating) / remaining : 0,
+      };
+    });
+    if (reviewId === userReviewId) {
+      setUserRating(null);
+      setUserReviewId(null);
     }
   }
 
@@ -497,6 +580,7 @@ export default function BookDetail() {
           : prev
       );
       setUserRating(rating);
+      setUserReviewId(review.id);
       setRating(5);
       setContent("");
       setRead(true);
@@ -567,7 +651,18 @@ export default function BookDetail() {
           {user && (
             <div className="mt-5">
               <p className="text-xs text-gray-400 dark:text-gray-500 mb-1.5">Your rating</p>
-              <StarRatingInput value={userRating ?? 0} onChange={handleQuickRate} />
+              <div className="flex items-center gap-3">
+                <StarRatingInput value={userRating ?? 0} onChange={handleQuickRate} />
+                {userRating !== null && userReviewId !== null && (
+                  <button
+                    onClick={handleRemoveRating}
+                    disabled={removingRating}
+                    className="text-xs text-gray-400 dark:text-gray-500 hover:text-red-400 transition-colors disabled:opacity-50"
+                  >
+                    {removingRating ? "Removing..." : "Remove rating"}
+                  </button>
+                )}
+              </div>
             </div>
           )}
 
@@ -840,7 +935,7 @@ export default function BookDetail() {
                       <span className="absolute top-3 right-3 text-[10px] font-semibold uppercase tracking-widest text-blue-500 dark:text-blue-400">
                         Top Review
                       </span>
-                      <ReviewCard review={featuredReview} bookId={book.id} user={user} />
+                      <ReviewCard review={featuredReview} bookId={book.id} user={user} onDelete={handleReviewDeleted} />
                     </div>
                   )}
                   {(featuredReview && featuredReview.like_count > 0 ? otherReviews : textReviews).map((review) => (
@@ -849,6 +944,7 @@ export default function BookDetail() {
                       review={review}
                       bookId={book.id}
                       user={user}
+                      onDelete={handleReviewDeleted}
                     />
                   ))}
                 </div>

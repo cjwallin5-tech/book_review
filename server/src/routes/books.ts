@@ -565,14 +565,16 @@ router.get("/:id", (req: Request, res: Response) => {
 
   // Current user's rating for this book (rating-only or full review)
   let userRating: number | null = null;
+  let userReviewId: number | null = null;
   if (userId) {
     const row = db.prepare(
-      "SELECT rating FROM reviews WHERE book_id = ? AND user_id = ? ORDER BY created_at DESC LIMIT 1"
-    ).get(req.params.id, userId) as { rating: number } | undefined;
+      "SELECT id, rating FROM reviews WHERE book_id = ? AND user_id = ? ORDER BY created_at DESC LIMIT 1"
+    ).get(req.params.id, userId) as { id: number; rating: number } | undefined;
     userRating = row?.rating ?? null;
+    userReviewId = row?.id ?? null;
   }
 
-  res.json({ ...book, reviews, series_books: seriesBooks, user_rating: userRating });
+  res.json({ ...book, reviews, series_books: seriesBooks, user_rating: userRating, user_review_id: userReviewId });
 });
 
 router.post("/", async (req: Request, res: Response) => {
@@ -645,6 +647,18 @@ router.post("/:id/reviews", authMiddleware, (req: AuthRequest, res: Response) =>
 
   const review = db.prepare("SELECT * FROM reviews WHERE id = ?").get(reviewId);
   res.status(201).json(review);
+});
+
+router.delete("/:bookId/reviews/:reviewId", authMiddleware, (req: AuthRequest, res: Response) => {
+  const result = db.prepare(
+    "DELETE FROM reviews WHERE id = ? AND book_id = ? AND user_id = ?"
+  ).run(req.params.reviewId, req.params.bookId, req.userId);
+
+  if (result.changes === 0) {
+    res.status(404).json({ error: "Review not found or not yours" });
+    return;
+  }
+  res.json({ message: "Review deleted" });
 });
 
 // --- User-specific authenticated routes ---
